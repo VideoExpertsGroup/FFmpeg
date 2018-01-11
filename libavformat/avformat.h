@@ -1659,6 +1659,11 @@ typedef struct AVFormatContext {
      * Can be set to 0 to let avformat choose using a heuristic.
      */
     int64_t max_analyze_duration2;
+
+	/*
+		break format detection in avformat_find_stream_info when at least one frame for each stream was received.
+	*/
+	int fastdetect;
 } AVFormatContext;
 
 int av_format_get_probe_score(const AVFormatContext *s);

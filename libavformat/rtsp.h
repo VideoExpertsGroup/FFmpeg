@@ -42,7 +42,11 @@ enum RTSPLowerTransport {
     RTSP_LOWER_TRANSPORT_HTTP = 8,          /**< HTTP tunneled - not a proper
                                                  transport mode as such,
                                                  only for use via AVOptions */
-    RTSP_LOWER_TRANSPORT_CUSTOM = 16,       /**< Custom IO - not a public
+	 RTSP_LOWER_TRANSPORT_HTTPS = 16,			  /**< HTTPS tunneled - not a proper
+																	 transport mode as such,
+																	 only for use via AVOptions */
+                                                 
+    RTSP_LOWER_TRANSPORT_CUSTOM = 32,       /**< Custom IO - not a public
                                                  option for lower_transport_mask,
                                                  but set in the SDP demuxer based
                                                  on a flag. */
@@ -404,6 +408,12 @@ typedef struct RTSPState {
      * User-Agent string
      */
     char *user_agent;
+
+    char* reply_text;
+    char* reply_code;
+    int64_t reply_text_ptr;
+    int64_t reply_code_ptr;
+
 } RTSPState;
 
 #define RTSP_FLAG_FILTER_SRC  0x1    /**< Filter incoming UDP packets -

@@ -94,6 +94,7 @@ static const AVOption avformat_options[] = {
 {"strict", "strictly conform to all the things in the spec no matter what the consequences", 0, AV_OPT_TYPE_CONST, {.i64 = FF_COMPLIANCE_STRICT }, INT_MIN, INT_MAX, D|E, "strict"},
 {"normal", NULL, 0, AV_OPT_TYPE_CONST, {.i64 = FF_COMPLIANCE_NORMAL }, INT_MIN, INT_MAX, D|E, "strict"},
 {"experimental", "allow non-standardized experimental variants", 0, AV_OPT_TYPE_CONST, {.i64 = FF_COMPLIANCE_EXPERIMENTAL }, INT_MIN, INT_MAX, D|E, "strict"},
+{"fastdetect", "streams formats fast detection", OFFSET(fastdetect), AV_OPT_TYPE_INT,{ .i64 = DEFAULT }, INT_MIN, INT_MAX, E|D },
 {NULL},
 };
 

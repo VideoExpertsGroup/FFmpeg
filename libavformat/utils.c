@@ -3190,7 +3190,7 @@ int avformat_find_stream_info(AVFormatContext *ic, AVDictionary **options)
 
         /* check if one codec still needs to be handled */
         for (i = 0; i < ic->nb_streams; i++) {
-            int fps_analyze_framecount = 20;
+            int fps_analyze_framecount = 2;
 
             st = ic->streams[i];
             if (!has_codec_parameters(st, NULL))
@@ -3257,6 +3257,20 @@ int avformat_find_stream_info(AVFormatContext *ic, AVDictionary **options)
             /* EOF or error*/
             break;
         }
+
+		if (ic->fastdetect)
+		{
+			int data_found_cnt = 0;
+			for (int n = 0; n < ic->nb_streams; n++)
+			{
+				if (ic->streams[n]->codec_info_nb_frames)data_found_cnt++;
+			}
+			if (data_found_cnt == ic->nb_streams)
+			{
+				av_log(ic, AV_LOG_DEBUG, "FASTDETECT\n");
+				break;
+			}
+		}
 
         if (ic->flags & AVFMT_FLAG_NOBUFFER)
             free_packet_buffer(&ic->packet_buffer, &ic->packet_buffer_end);

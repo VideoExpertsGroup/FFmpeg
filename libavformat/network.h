@@ -197,6 +197,7 @@ int ff_getnameinfo(const struct sockaddr *sa, int salen,
 #define getnameinfo ff_getnameinfo
 #endif /* !HAVE_GETADDRINFO */
 
+
 #if !HAVE_GETADDRINFO || HAVE_WINSOCK2_H
 const char *ff_gai_strerror(int ecode);
 #undef gai_strerror
@@ -264,5 +265,8 @@ int ff_listen_connect(int fd, const struct sockaddr *addr,
 int ff_http_match_no_proxy(const char *no_proxy, const char *hostname);
 
 int ff_socket(int domain, int type, int protocol);
+
+int ff_getaddrinfo_a(URLContext *h, const char *node, const char *service,
+                   const struct addrinfo *hints, struct addrinfo **res);
 
 #endif /* AVFORMAT_NETWORK_H */

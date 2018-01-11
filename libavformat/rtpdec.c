@@ -32,6 +32,11 @@
 
 #define MIN_FEEDBACK_INTERVAL 200000 /* 200 ms in us */
 
+#ifdef TCP_RR_INTERVAL
+#define MIN_RR_INTERVAL 5000000 /* 5 seconds in us */
+#endif
+
+
 static RTPDynamicProtocolHandler gsm_dynamic_handler = {
     .enc_name   = "GSM",
     .codec_type = AVMEDIA_TYPE_AUDIO,
@@ -254,7 +259,7 @@ static void rtcp_update_jitter(RTPStatistics *s, uint32_t sent_timestamp,
 }
 
 int ff_rtp_check_and_send_back_rr(RTPDemuxContext *s, URLContext *fd,
-                                  AVIOContext *avio, int count)
+                                  AVIOContext *avio, int count, int prot /*TCP - 0, UDP - 1*/)
 {
     AVIOContext *pb;
     uint8_t *buf;
@@ -272,6 +277,7 @@ int ff_rtp_check_and_send_back_rr(RTPDemuxContext *s, URLContext *fd,
     if ((!fd && !avio) || (count < 1))
         return -1;
 
+	 #ifndef TCP_RR_INTERVAL
     /* TODO: I think this is way too often; RFC 1889 has algorithm for this */
     /* XXX: MPEG pts hardcoded. RTCP send every 0.5 seconds */
     s->octet_count += count;
@@ -281,11 +287,29 @@ int ff_rtp_check_and_send_back_rr(RTPDemuxContext *s, URLContext *fd,
     if (rtcp_bytes < 28)
         return -1;
     s->last_octet_count = s->octet_count;
+    #else
+	 int64_t now;
+    now = av_gettime_relative();
+    if (s->last_rr_time &&
+        (now - s->last_rr_time) < MIN_RR_INTERVAL)
+        return -1;
+    s->last_rr_time = now;
+    #endif 
 
     if (!fd)
         pb = avio;
     else if (avio_open_dyn_buf(&pb) < 0)
         return -1;
+
+	 #ifdef TCP_RR_INTERVAL
+	 if (prot == 0)
+	 {
+		 av_log(s->ic, AV_LOG_DEBUG, "ff_rtp_check_and_send_back_rr %d\n",s->st->index*2+1);
+		 avio_w8(pb, 0x24); 			    	/* Magic */
+		 avio_w8(pb, s->st->index*2+1);  /* Channel */
+		 avio_wb16(pb, 48); 				 	/* length */
+	 }
+	 #endif
 
     // Receiver Report
     avio_w8(pb, (RTP_VERSION << 6) + 1); /* 1 report block */

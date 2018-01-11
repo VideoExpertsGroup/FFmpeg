@@ -174,8 +174,16 @@ static int url_alloc_for_protocol(URLContext **puc, struct URLProtocol *up,
             }
         }
     }
+
+    av_log(NULL, AV_LOG_WARNING, "url_alloc_for_protocol: name %s, interrupt %p, %p\n", uc->prot->name, int_cb,
+                (int_cb ? int_cb->callback : 0));
+
     if (int_cb)
+    {
         uc->interrupt_callback = *int_cb;
+        av_log(NULL, AV_LOG_WARNING, "url_alloc_for_protocol: interrupt_callback %p, %p\n", &uc->interrupt_callback,
+                    uc->interrupt_callback.callback);
+    }
 
     *puc = uc;
     return 0;
@@ -193,6 +201,8 @@ fail:
 
 int ffurl_connect(URLContext *uc, AVDictionary **options)
 {
+    av_log(NULL, AV_LOG_WARNING, "ffurl_connect: protocol name %s\n", uc->prot->name);
+
     int err =
         uc->prot->url_open2 ? uc->prot->url_open2(uc,
                                                   uc->filename,
@@ -277,6 +287,8 @@ int ffurl_open(URLContext **puc, const char *filename, int flags,
         goto fail;
     if ((ret = av_opt_set_dict(*puc, options)) < 0)
         goto fail;
+
+    av_log(NULL, AV_LOG_WARNING, "ffurl_open: protocol name %s\n", (*puc)->prot->name);
     ret = ffurl_connect(*puc, options);
     if (!ret)
         return 0;
@@ -298,9 +310,14 @@ static inline int retry_transfer_wrapper(URLContext *h, uint8_t *buf,
 
     len = 0;
     while (len < size_min) {
+        //av_log(NULL, AV_LOG_WARNING, "retry_transfer_wrapper: interrupt_callback %p\n", &h->interrupt_callback);
         if (ff_check_interrupt(&h->interrupt_callback))
             return AVERROR_EXIT;
+
+        av_log(NULL, AV_LOG_WARNING, "retry_transfer_wrapper: transfer_func for proto %s\n", h->prot->name);
         ret = transfer_func(h, buf + len, size - len);
+        av_log(NULL, AV_LOG_WARNING, "retry_transfer_wrapper: transfer_func return %d\n", ret);
+
         if (ret == AVERROR(EINTR))
             continue;
         if (h->flags & AVIO_FLAG_NONBLOCK)
@@ -331,6 +348,8 @@ int ffurl_read(URLContext *h, unsigned char *buf, int size)
 {
     if (!(h->flags & AVIO_FLAG_READ))
         return AVERROR(EIO);
+
+    //av_log(NULL, AV_LOG_WARNING, "ffurl_read: protocol name %s\n", h->prot->name);
     return retry_transfer_wrapper(h, buf, size, 1, h->prot->url_read);
 }
 
@@ -338,6 +357,8 @@ int ffurl_read_complete(URLContext *h, unsigned char *buf, int size)
 {
     if (!(h->flags & AVIO_FLAG_READ))
         return AVERROR(EIO);
+
+    //av_log(NULL, AV_LOG_WARNING, "ffurl_read_complete: protocol name %s\n", h->prot->name);
     return retry_transfer_wrapper(h, buf, size, size, h->prot->url_read);
 }
 
@@ -349,6 +370,7 @@ int ffurl_write(URLContext *h, const unsigned char *buf, int size)
     if (h->max_packet_size && size > h->max_packet_size)
         return AVERROR(EIO);
 
+    //av_log(NULL, AV_LOG_WARNING, "ffurl_write: protocol name %s\n", h->prot->name);
     return retry_transfer_wrapper(h, (unsigned char *)buf, size, size, (void*)h->prot->url_write);
 }
 
@@ -463,6 +485,7 @@ int ffurl_shutdown(URLContext *h, int flags)
 int ff_check_interrupt(AVIOInterruptCB *cb)
 {
     int ret;
+    //av_log(NULL, AV_LOG_WARNING, "ff_check_interrupt: interrupt_callback %p, %p\n", cb, (cb ? cb->callback : 0));
     if (cb && cb->callback && (ret = cb->callback(cb->opaque)))
         return ret;
     return 0;

@@ -43,6 +43,8 @@
 #define BUFFER_SIZE MAX_URL_SIZE
 #define MAX_REDIRECTS 8
 
+#define MAX_REPLY_LENGTH 2048
+
 typedef struct {
     const AVClass *class;
     URLContext *hd;
@@ -89,6 +91,10 @@ typedef struct {
 #endif
     AVDictionary *chained_options;
     int send_expect_100;
+    char *reply_text;
+    char *reply_code;
+    int64_t reply_text_ptr;
+    int64_t reply_code_ptr;
 } HTTPContext;
 
 #define OFFSET(x) offsetof(HTTPContext, x)
@@ -116,6 +122,8 @@ static const AVOption options[] = {
 {"location", "The actual location of the data received", OFFSET(location), AV_OPT_TYPE_STRING, { 0 }, 0, 0, D|E },
 {"offset", "initial byte offset", OFFSET(off), AV_OPT_TYPE_INT64, {.i64 = 0}, 0, INT64_MAX, D },
 {"end_offset", "try to limit the request to bytes preceding this offset", OFFSET(end_off), AV_OPT_TYPE_INT64, {.i64 = 0}, 0, INT64_MAX, D },
+    { "reply_text_ptr", "Pointer to server reply in text", OFFSET(reply_text_ptr), AV_OPT_TYPE_INT, { .i64 = 0 }, INT64_MIN, INT64_MAX, D|E },
+    { "reply_code_ptr", "Pointer to server reply in int" , OFFSET(reply_code_ptr), AV_OPT_TYPE_INT, { .i64 = 0 }, INT64_MIN, INT64_MAX, D|E },
 {NULL}
 };
 #define HTTP_CLASS(flavor)\
@@ -448,6 +456,12 @@ static int process_line(URLContext *h, char *line, int line_count,
             p++;
         s->http_code = strtol(p, &end, 10);
 
+	if(s->reply_code)
+	{
+		s->reply_code[0]=0;
+		av_strlcatf(s->reply_code, MAX_REPLY_LENGTH, "%d",s->http_code);
+	}
+
         av_log(h, AV_LOG_DEBUG, "http_code=%d\n", s->http_code);
 
         if ((ret = check_http_code(h, s->http_code, end)) < 0)
@@ -564,8 +578,15 @@ static int get_cookies(HTTPContext *s, char **cookies, const char *path,
                        !av_strncasecmp("version", param, 7)) {
                 // ignore Comment, Max-Age, Secure and Version
             } else {
-                av_free(cvalue);
-                cvalue = av_strdup(param);
+                //av_free(cvalue);
+                //cvalue = av_strdup(param);
+                char *result = NULL;
+                char *template = (cvalue == NULL ? "%s%s" : "%s;%s");
+                if (asprintf(&result, template, (cvalue != NULL ? cvalue : ""), param) != -1)
+                {
+                    free(cvalue);
+                    cvalue = result;
+                }
             }
         }
         if (!cdomain)
@@ -640,13 +661,25 @@ static int http_read_header(URLContext *h, int *new_location)
 
     s->chunksize = -1;
 
+    s->reply_text = (char*)s->reply_text_ptr;
+    if(s->reply_text)s->reply_text[0] = 0;
+    s->reply_code = (char*)s->reply_code_ptr;
+    if(s->reply_code)s->reply_code[0] = 0;
+
     for (;;) {
         if ((err = http_get_line(s, line, sizeof(line))) < 0)
             return err;
 
         av_log(h, AV_LOG_DEBUG, "header='%s'\n", line);
 
+    	if(s->reply_text)
+    	{
+		av_strlcat(s->reply_text, line, MAX_REPLY_LENGTH);
+		av_strlcat(s->reply_text, "\n", MAX_REPLY_LENGTH);
+	}
+
         err = process_line(h, line, s->line_count, new_location);
+
         if (err < 0)
             return err;
         if (err == 0)
@@ -656,6 +689,7 @@ static int http_read_header(URLContext *h, int *new_location)
 
     if (s->seekable == -1 && s->is_mediagateway && s->filesize == 2000000000)
         h->is_streamed = 1; /* we can in fact _not_ seek */
+
 
     return err;
 }
@@ -799,6 +833,13 @@ static int http_connect(URLContext *h, const char *path, const char *local_path,
          * we've still to send the POST data, but the code calling this
          * function will check http_code after we return. */
         s->http_code = 200;
+
+
+	if(s->reply_code)
+	{
+		av_strlcpy(s->reply_code, "200", MAX_REPLY_LENGTH);
+	}
+
         err = 0;
         goto done;
     }
@@ -1029,6 +1070,10 @@ static int http_close(URLContext *h)
     inflateEnd(&s->inflate_stream);
     av_freep(&s->inflate_buffer);
 #endif
+
+
+    s->reply_text = NULL;
+    s->reply_code = NULL;
 
     if (!s->end_chunked_post) {
         /* Close the write direction by sending the end of chunked encoding. */

@@ -59,6 +59,7 @@ static int rtmp_http_send_cmd(URLContext *h, const char *cmd)
     uint8_t c;
     int ret;
 
+    //av_log(NULL, AV_LOG_WARNING, " rtmp_http_send_cmd: ff_url_join %d, %s\n", h->flags, cmd);
     ff_url_join(uri, sizeof(uri), "http", NULL, rt->host, rt->port,
                 "/%s/%s/%d", cmd, rt->client_id, rt->seq++);
 
@@ -66,6 +67,7 @@ static int rtmp_http_send_cmd(URLContext *h, const char *cmd)
                    rt->out_size, 0);
 
     /* send a new request to the server */
+    //av_log(NULL, AV_LOG_WARNING, " rtmp_http_send_cmd: ff_http_do_new_request %s\n", uri);
     if ((ret = ff_http_do_new_request(rt->stream, uri)) < 0)
         return ret;
 
@@ -73,6 +75,7 @@ static int rtmp_http_send_cmd(URLContext *h, const char *cmd)
     rt->out_size = 0;
 
     /* read the first byte which contains the polling interval */
+    //av_log(NULL, AV_LOG_WARNING, " rtmp_http_send_cmd: ffurl_read\n");
     if ((ret = ffurl_read(rt->stream, &c, 1)) < 0)
         return ret;
 
@@ -86,6 +89,7 @@ static int rtmp_http_write(URLContext *h, const uint8_t *buf, int size)
 {
     RTMP_HTTPContext *rt = h->priv_data;
 
+    //av_log(NULL, AV_LOG_WARNING, " rtmp_http_write %d\n", h->flags);
     if (rt->out_size + size > rt->out_capacity) {
         int err;
         rt->out_capacity = (rt->out_size + size) * 2;
@@ -107,12 +111,17 @@ static int rtmp_http_read(URLContext *h, uint8_t *buf, int size)
     RTMP_HTTPContext *rt = h->priv_data;
     int ret, off = 0;
 
+    //av_log(NULL, AV_LOG_WARNING, " rtmp_http_read %d\n", h->flags);
+
     /* try to read at least 1 byte of data */
     do {
+        //av_log(NULL, AV_LOG_WARNING, " rtmp_http_read: ffurl_read\n");
+
         ret = ffurl_read(rt->stream, buf + off, size);
         if (ret < 0 && ret != AVERROR_EOF)
             return ret;
 
+        //av_log(NULL, AV_LOG_WARNING, " rtmp_http_read: ffurl_read ret %d\n", ret);
         if (!ret || ret == AVERROR_EOF) {
             if (rt->finishing) {
                 /* Do not send new requests when the client wants to
@@ -148,7 +157,11 @@ static int rtmp_http_read(URLContext *h, uint8_t *buf, int size)
             off  += ret;
             size -= ret;
             rt->nb_bytes_read += ret;
+            //av_log(NULL, AV_LOG_WARNING, " rtmp_http_read: ffurl_read nb_bytes_read %d\n", rt->nb_bytes_read);
         }
+
+        //av_log(NULL, AV_LOG_WARNING, " rtmp_http_read: ffurl_read end\n");
+
     } while (off <= 0);
 
     return off;
@@ -160,6 +173,7 @@ static int rtmp_http_close(URLContext *h)
     uint8_t tmp_buf[2048];
     int ret = 0;
 
+    av_log(NULL, AV_LOG_WARNING, " rtmp_http_close\n");
     if (rt->initialized) {
         /* client wants to close the connection */
         rt->finishing = 1;
@@ -187,6 +201,7 @@ static int rtmp_http_open(URLContext *h, const char *uri, int flags)
     char headers[1024], url[1024];
     int ret, off = 0;
 
+    av_log(NULL, AV_LOG_WARNING, " rtmp_http_open %d\n", flags);
     av_url_split(NULL, 0, NULL, 0, rt->host, sizeof(rt->host), &rt->port,
                  NULL, 0, uri);
 
@@ -208,7 +223,7 @@ static int rtmp_http_open(URLContext *h, const char *uri, int flags)
     }
 
     /* alloc the http context */
-    if ((ret = ffurl_alloc(&rt->stream, url, AVIO_FLAG_READ_WRITE, NULL)) < 0)
+    if ((ret = ffurl_alloc(&rt->stream, url, AVIO_FLAG_READ_WRITE, &h->interrupt_callback/*NULL*/)) < 0)
         goto fail;
 
     /* set options */

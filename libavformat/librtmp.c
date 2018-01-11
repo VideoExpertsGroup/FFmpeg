@@ -46,6 +46,7 @@ typedef struct LibRTMPContext {
     char *swfverify;
     char *pageurl;
     char *client_buffer_time;
+    char *token;
     int live;
 } LibRTMPContext;
 
@@ -86,11 +87,15 @@ static int rtmp_close(URLContext *s)
  *             Additional RTMP library options may be appended as
  *             space-separated key-value pairs.
  */
+//#define STR2AVAL(av,str)   av.av_val = str; av.av_len = strlen(av.av_val)
 static int rtmp_open(URLContext *s, const char *uri, int flags)
 {
     LibRTMPContext *ctx = s->priv_data;
     RTMP *r = &ctx->rtmp;
     int rc = 0, level;
+    //char ctoken[32];// = "20ff9f8cc20d321f";
+    //AVal token;
+    //static const AVal av_token = AVC("token");
     char *filename = s->filename;
     int len = strlen(s->filename) + 1;
 
@@ -110,6 +115,8 @@ static int rtmp_open(URLContext *s, const char *uri, int flags)
     if (ctx->tcurl)    len += strlen(ctx->tcurl)    + sizeof(" tcUrl=");
     if (ctx->pageurl)  len += strlen(ctx->pageurl)  + sizeof(" pageUrl=");
     if (ctx->flashver) len += strlen(ctx->flashver) + sizeof(" flashver=");
+
+	if (ctx->token)    len += strlen(ctx->token) + sizeof(" token=");
 
     if (ctx->conn) {
         char *sep, *p = ctx->conn;
@@ -213,8 +220,18 @@ static int rtmp_open(URLContext *s, const char *uri, int flags)
             av_strlcat(filename, ctx->swfurl, len);
         }
     }
+	if (ctx->token){
+        av_strlcat(filename, " token=", len);
+        av_strlcat(filename, ctx->token, len);
+	}
 
     RTMP_Init(r);
+    RTMP_SetInterCP(r,s->interrupt_callback.callback,s->interrupt_callback.opaque);
+
+	 av_log(NULL, AV_LOG_ERROR, "rtmp_open: token:%s\n",ctx->token);
+	 //STR2AVAL(token, ctx->token);
+	 //RTMP_SetOpt(r, &av_token, &token);
+    
     if (!RTMP_SetupURL(r, filename)) {
         rc = AVERROR_UNKNOWN;
         goto fail;
@@ -310,6 +327,7 @@ static const AVOption options[] = {
     {"rtmp_swfurl", "URL of the SWF player. By default no value will be sent", OFFSET(swfurl), AV_OPT_TYPE_STRING, {.str = NULL }, 0, 0, DEC|ENC},
     {"rtmp_swfverify", "URL to player swf file, compute hash/size automatically. (unimplemented)", OFFSET(swfverify), AV_OPT_TYPE_STRING, {.str = NULL }, 0, 0, DEC},
     {"rtmp_tcurl", "URL of the target stream. Defaults to proto://host[:port]/app.", OFFSET(tcurl), AV_OPT_TYPE_STRING, {.str = NULL }, 0, 0, DEC|ENC},
+    {"rtmp_token", "Secure Token for WOWZA authorization (TEA)", OFFSET(token), AV_OPT_TYPE_STRING, {.str = NULL }, 0, 0, DEC|ENC},
     { NULL },
 };
 
