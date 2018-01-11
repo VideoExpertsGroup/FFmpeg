@@ -963,14 +963,21 @@ static int mov_write_audio_tag(AVFormatContext *s, AVIOContext *pb, MOVMuxContex
                 avio_wb16(pb, 16);
             avio_wb16(pb, track->audio_vbr ? -2 : 0); /* compression ID */
         } else { /* reserved for mp4/3gp */
-            avio_wb16(pb, 2);
+
+//asvzzz g711
+//            avio_wb16(pb, 2);
+            avio_wb16(pb, track->par->channels);
+
             avio_wb16(pb, 16);
             avio_wb16(pb, 0);
         }
 
+av_log(NULL, AV_LOG_WARNING, "track->par->sample_rate=%d\n", track->par->sample_rate);
+
         avio_wb16(pb, 0); /* packet size (= 0) */
         avio_wb16(pb, track->par->sample_rate <= UINT16_MAX ?
                       track->par->sample_rate : 0);
+
         avio_wb16(pb, 0); /* Reserved */
     }
 
@@ -1014,6 +1021,7 @@ static int mov_write_audio_tag(AVFormatContext *s, AVIOContext *pb, MOVMuxContex
 
     if (track->mode == MODE_MOV && track->par->codec_type == AVMEDIA_TYPE_AUDIO)
         mov_write_chan_tag(s, pb, track);
+
 
     if (mov->encryption_scheme != MOV_ENC_NONE) {
         ff_mov_cenc_write_sinf_tag(track, pb, mov->encryption_kid);
@@ -1177,8 +1185,11 @@ static int mp4_get_codec_tag(AVFormatContext *s, MOVTrack *track)
     else if (track->par->codec_id == AV_CODEC_ID_DIRAC)     tag = MKTAG('d','r','a','c');
     else if (track->par->codec_id == AV_CODEC_ID_MOV_TEXT)  tag = MKTAG('t','x','3','g');
     else if (track->par->codec_id == AV_CODEC_ID_VC1)       tag = MKTAG('v','c','-','1');
+    else if (track->par->codec_id == AV_CODEC_ID_PCM_MULAW) tag = MKTAG('u','l','a','w');//asvzzz g711
+    else if (track->par->codec_id == AV_CODEC_ID_PCM_ALAW)  tag = MKTAG('a','l','a','w');//asvzzz g711
     else if (track->par->codec_type == AVMEDIA_TYPE_VIDEO)  tag = MKTAG('m','p','4','v');
-    else if (track->par->codec_type == AVMEDIA_TYPE_AUDIO)  tag = MKTAG('m','p','4','a');
+    else if (track->par->codec_type == AVMEDIA_TYPE_AUDIO)  
+            tag = MKTAG('m','p','4','a');
     else if (track->par->codec_id == AV_CODEC_ID_DVD_SUBTITLE)  tag = MKTAG('m','p','4','s');
 
     return tag;
@@ -4257,6 +4268,9 @@ static int mov_write_ftyp_tag(AVIOContext *pb, AVFormatContext *s)
 
     if (mov->flags & FF_MOV_FLAG_DASH && mov->flags & FF_MOV_FLAG_GLOBAL_SIDX)
         ffio_wfourcc(pb, "dash");
+
+//asvzzz g711
+    ffio_wfourcc(pb, "vxg1");
 
     return update_size(pb, pos);
 }

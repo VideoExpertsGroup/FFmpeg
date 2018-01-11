@@ -47,6 +47,7 @@ OBJS-$(CONFIG_RTPDEC)                    += rdt.o                       \
                                             rtpdec_hevc.o               \
                                             rtpdec_ilbc.o               \
                                             rtpdec_jpeg.o               \
+                                            rtpdec_zio.o                \
                                             rtpdec_latm.o               \
                                             rtpdec_mpa_robust.o         \
                                             rtpdec_mpeg12.o             \

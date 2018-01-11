@@ -87,6 +87,6 @@ extern RTPDynamicProtocolHandler ff_theora_dynamic_handler;
 extern RTPDynamicProtocolHandler ff_vc2hq_dynamic_handler;
 extern RTPDynamicProtocolHandler ff_vorbis_dynamic_handler;
 extern RTPDynamicProtocolHandler ff_vp8_dynamic_handler;
-extern RTPDynamicProtocolHandler ff_vp9_dynamic_handler;
+extern RTPDynamicProtocolHandler ff_zio_dynamic_handler;
 
 #endif /* AVFORMAT_RTPDEC_FORMATS_H */

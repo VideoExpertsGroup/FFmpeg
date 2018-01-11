@@ -106,6 +106,7 @@ static const AVOption avformat_options[] = {
 {"protocol_whitelist", "List of protocols that are allowed to be used", OFFSET(protocol_whitelist), AV_OPT_TYPE_STRING, { .str = NULL },  CHAR_MIN, CHAR_MAX, D },
 {"protocol_blacklist", "List of protocols that are not allowed to be used", OFFSET(protocol_blacklist), AV_OPT_TYPE_STRING, { .str = NULL },  CHAR_MIN, CHAR_MAX, D },
 {"max_streams", "maximum number of streams", OFFSET(max_streams), AV_OPT_TYPE_INT, { .i64 = 1000 }, 0, INT_MAX, D },
+{"fastdetect", "streams formats fast detection", OFFSET(fastdetect), AV_OPT_TYPE_INT,{ .i64 = DEFAULT }, INT_MIN, INT_MAX, E|D },
 {NULL},
 };
 

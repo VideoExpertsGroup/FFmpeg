@@ -39,6 +39,9 @@ typedef struct RTPDynamicProtocolHandler RTPDynamicProtocolHandler;
 
 #define RTP_NOTS_VALUE ((uint32_t)-1)
 
+//#define TCP_RR_INTERVAL	1
+
+
 typedef struct RTPDemuxContext RTPDemuxContext;
 RTPDemuxContext *ff_rtp_parse_open(AVFormatContext *s1, AVStream *st,
                                    int payload_type, int queue_size);
@@ -71,7 +74,7 @@ void ff_rtp_send_punch_packets(URLContext* rtp_handle);
  * (we don't have access to the rtcp handle from here)
  */
 int ff_rtp_check_and_send_back_rr(RTPDemuxContext *s, URLContext *fd,
-                                  AVIOContext *avio, int count);
+                                  AVIOContext *avio, int count, int prot /*TCP - 0, UDP - 1*/);
 int ff_rtp_send_rtcp_feedback(RTPDemuxContext *s, URLContext *fd,
                               AVIOContext *avio);
 
@@ -187,6 +190,8 @@ struct RTPDemuxContext {
     unsigned int last_octet_count;
     int64_t last_feedback_time;
 
+    int64_t last_rr_time;
+    
     /* dynamic payload stuff */
     const RTPDynamicProtocolHandler *handler;
     PayloadContext *dynamic_protocol_context;

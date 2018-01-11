@@ -74,9 +74,12 @@ int av_dict_set(AVDictionary **pm, const char *key, const char *value,
     AVDictionaryEntry *tag = NULL;
     char *oldval = NULL, *copy_key = NULL, *copy_value = NULL;
 
+	//av_log(NULL, AV_LOG_ERROR, "=>av_dict_set m=%p, key=%s, value=%s", m, key, value);
+
     if (!(flags & AV_DICT_MULTIKEY)) {
         tag = av_dict_get(m, key, NULL, flags);
     }
+	//av_log(NULL, AV_LOG_ERROR, "=av_dict_set tag=%p", tag);
     if (flags & AV_DICT_DONT_STRDUP_KEY)
         copy_key = (void *)key;
     else
@@ -89,6 +92,8 @@ int av_dict_set(AVDictionary **pm, const char *key, const char *value,
         m = *pm = av_mallocz(sizeof(*m));
     if (!m || (key && !copy_key) || (value && !copy_value))
         goto err_out;
+
+	//av_log(NULL, AV_LOG_ERROR, "=av_dict_set copy_key=%s, copy_value=%s", copy_key, copy_value);
 
     if (tag) {
         if (flags & AV_DICT_DONT_OVERWRITE) {
@@ -108,6 +113,7 @@ int av_dict_set(AVDictionary **pm, const char *key, const char *value,
         if (!tmp)
             goto err_out;
         m->elems = tmp;
+		//av_log(NULL, AV_LOG_ERROR, "=av_dict_set m->elems=%p m->count=%d", m->elems, m->count);
     }
     if (copy_value) {
         m->elems[m->count].key = copy_key;
@@ -124,6 +130,7 @@ int av_dict_set(AVDictionary **pm, const char *key, const char *value,
             av_freep(&copy_value);
         }
         m->count++;
+		//av_log(NULL, AV_LOG_ERROR, "=av_dict_set m->count=%d", m->count);
     } else {
         av_freep(&copy_key);
     }

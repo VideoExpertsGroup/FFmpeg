@@ -2543,6 +2543,43 @@ static void show_error(WriterContext *w, int err)
     writer_print_section_footer(w);
 }
 
+
+static int zio_bw_callback(void* t,char* buf, int size)
+{
+
+	AVZioStatData* stat_data = (AVZioStatData*)buf;
+	char*	szDuration = NULL;
+	int hr, hr3600, mn, mn60, sec, msec = 0;
+	uint32_t run_time_s = 0;
+
+	if(size!=sizeof(AVZioStatData))
+	{
+		av_log(NULL, AV_LOG_ERROR, "AVZioStatData invalid size.\n");
+		return -1;
+	}
+
+	run_time_s  = stat_data->run_time_ms/1000;
+	hr = run_time_s / 3600;
+	hr3600 = hr * 3600;
+	mn = (run_time_s - hr3600) / 60;
+	mn60 = mn * 60;
+	sec = run_time_s - hr3600 - mn60;
+	msec = stat_data->run_time_ms - (hr3600 + mn60 + sec) * 1000;
+	szDuration = av_asprintf("%.2d:%.2d:%.2d.%.3d", hr, mn, sec, msec);
+
+	av_log(NULL, AV_LOG_ERROR, "\n");
+	av_log(NULL, AV_LOG_ERROR, "frame# = %d (0x%X)\n", stat_data->current_frame_num, stat_data->current_frame_num);
+	av_log(NULL, AV_LOG_ERROR, "run time    = %s\n", szDuration);
+	av_log(NULL, AV_LOG_ERROR, "frames sent = %lu, received = %lu, lost=%d\n", stat_data->frames_sent, stat_data->frames_recv, stat_data->frames_sent - stat_data->frames_recv);
+	av_log(NULL, AV_LOG_ERROR, "bytes processed = %llu\n", stat_data->bytes_processed);
+	av_log(NULL, AV_LOG_ERROR, "bitrate   = %lubps, %luKbps, %.2fMbps\n", stat_data->bitrate, stat_data->bitrate/1024, (float)stat_data->bitrate / 1048576.);
+	av_log(NULL, AV_LOG_ERROR, "framerate = %dfps\n", stat_data->framerate);
+	av_log(NULL, AV_LOG_ERROR, "errors_count = %lu\n", stat_data->errors_count);
+	av_free(szDuration);
+
+	return 0;
+}
+
 static int open_input_file(InputFile *ifile, const char *filename)
 {
     int err, i, orig_nb_streams;
@@ -2567,6 +2604,9 @@ static int open_input_file(InputFile *ifile, const char *filename)
         av_log(NULL, AV_LOG_ERROR, "Option %s not found.\n", t->key);
         return AVERROR_OPTION_NOT_FOUND;
     }
+
+fmt_ctx->ziobw_cb.callback = zio_bw_callback;
+fmt_ctx->ziobw_cb.opaque = NULL;
 
     /* fill the streams in the format context */
     opts = setup_find_stream_info_opts(fmt_ctx, codec_opts);

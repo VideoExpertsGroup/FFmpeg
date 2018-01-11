@@ -898,6 +898,38 @@ static void dump_attachment(AVStream *st, const char *filename)
     avio_close(out);
 }
 
+static int decrypt_callback(void* t, int payload_type, uint32_t flags, uint8_t* buf, int size)
+{
+
+//av_log(NULL, AV_LOG_ERROR, "decrypt_callback\n");
+
+	int startpoint = 2;
+
+	if(!buf || 0==size)return -1;
+
+	if (payload_type == 0x60)//H264
+	{
+		startpoint = 2;
+	}
+	else
+	if (payload_type == 0x61)//AAC
+	{
+		startpoint = 4;
+	}
+	else
+	if (payload_type == 0x00)//G711
+	{
+		startpoint = 4;//?
+	}
+
+	for (int i = startpoint; i < size; i++)
+	{
+		buf[i] ^= 0x13;
+	}
+
+	return 0;
+}
+
 static int open_input_file(OptionsContext *o, const char *filename)
 {
     InputFile *f;
@@ -1005,6 +1037,9 @@ static int open_input_file(OptionsContext *o, const char *filename)
         av_dict_set(&o->g->format_opts, "scan_all_pmts", NULL, AV_DICT_MATCH_CASE);
     remove_avoptions(&o->g->format_opts, o->g->codec_opts);
     assert_avoptions(o->g->format_opts);
+
+ic->decrypt_cb.callback = decrypt_callback;
+ic->decrypt_cb.opaque = NULL;
 
     /* apply forced codec ids */
     for (i = 0; i < ic->nb_streams; i++)

@@ -727,6 +727,9 @@ static int update_wrap_reference(AVFormatContext *s, AVStream *st, int stream_in
         (ref < (1LL << st->pts_wrap_bits) - av_rescale(60, st->time_base.den, st->time_base.num)) ?
         AV_PTS_WRAP_ADD_OFFSET : AV_PTS_WRAP_SUB_OFFSET;
 
+	//balm 170327. force AV_PTS_WRAP_IGNORE to avoid negative values in wrap_timestamp
+	pts_wrap_behavior = AV_PTS_WRAP_IGNORE;
+
     first_program = av_find_program_from_stream(s, NULL, stream_index);
 
     if (!first_program) {
@@ -770,6 +773,8 @@ static int update_wrap_reference(AVFormatContext *s, AVStream *st, int stream_in
             program = av_find_program_from_stream(s, program, stream_index);
         }
     }
+
+	av_log(s, AV_LOG_ERROR, "update_wrap_reference  f(%d) i(%d) pts(%lld) pts_wrap_behavior(%d) pts_wrap_reference(%lld) ref(%lld)\n", first_program, pkt->stream_index, pkt->pts, pts_wrap_behavior, pts_wrap_reference, ref);
     return 1;
 }
 
@@ -849,10 +854,15 @@ int ff_read_packet(AVFormatContext *s, AVPacket *pkt)
                 st->start_time = wrap_timestamp(st, st->start_time);
             if (!is_relative(st->cur_dts))
                 st->cur_dts = wrap_timestamp(st, st->cur_dts);
+
+			av_log(s, AV_LOG_ERROR, "ff_read_packet correct first first_dts(%lld) start_time(%lld) cur_dts(%lld)\n", st->first_dts, st->start_time, st->cur_dts);
         }
 
         pkt->dts = wrap_timestamp(st, pkt->dts);
+		int64_t pts_before = pkt->pts;
         pkt->pts = wrap_timestamp(st, pkt->pts);
+		if(pts_before != pkt->pts)
+			av_log(s, AV_LOG_ERROR, "ff_read_packet wrap_timestamp pts before(%lld) after(%lld)\n", pts_before, pkt->pts);
 
         force_codec_ids(s, st);
 
@@ -3558,6 +3568,22 @@ FF_ENABLE_DEPRECATION_WARNINGS
             eof_reached = 1;
             break;
         }
+
+		if (!(ic->ctx_flags & AVFMTCTX_NOHEADER))
+		if (ic->fastdetect)
+		{
+			int data_found_cnt = 0;
+			for (int n = 0; n < ic->nb_streams; n++)
+			{
+				if (ic->streams[n]->codec_info_nb_frames)data_found_cnt++;
+			}
+			if (data_found_cnt == ic->nb_streams)
+			{
+				av_log(ic, AV_LOG_DEBUG, "FASTDETECT\n");
+				break;
+			}
+		}
+
 
         pkt = &pkt1;
 

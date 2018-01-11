@@ -55,6 +55,8 @@
 #define RTMP_PKTDATA_DEFAULT_SIZE 4096
 #define RTMP_HEADER 11
 
+#define MAX_REPLY_LENGTH 2048
+
 /** RTMP protocol handler state */
 typedef enum {
     STATE_START,      ///< client has not done anything yet
@@ -130,6 +132,10 @@ typedef struct RTMPContext {
     char          auth_params[500];
     int           do_reconnect;
     int           auth_tried;
+    char*         reply_text;
+    char*         reply_code;
+    int64_t       reply_text_ptr;
+    int64_t       reply_code_ptr;
 } RTMPContext;
 
 #define PLAYER_KEY_OPEN_PART_LEN 30   ///< length of partial key used for first client digest signing
@@ -1289,6 +1295,17 @@ static int rtmp_handshake(URLContext *s, RTMPContext *rt)
     av_log(s, AV_LOG_DEBUG, "Server version %d.%d.%d.%d\n",
            serverdata[5], serverdata[6], serverdata[7], serverdata[8]);
 
+    rt->reply_text = (char*)rt->reply_text_ptr;
+    if(rt->reply_text)rt->reply_text[0]=0;
+    rt->reply_code = (char*)rt->reply_code_ptr;
+    if(rt->reply_code)rt->reply_code[0]=0;
+
+    if(rt->reply_text)
+    {
+       av_strlcatf(rt->reply_text, MAX_REPLY_LENGTH, "Type answer %d\n", serverdata[0]);
+       av_strlcatf(rt->reply_text, MAX_REPLY_LENGTH, "Server version %d.%d.%d.%d\n", serverdata[5], serverdata[6], serverdata[7], serverdata[8]);
+    }
+
     if (rt->is_input && serverdata[5] >= 3) {
         server_pos = rtmp_validate_digest(serverdata + 1, 772);
         if (server_pos < 0)
@@ -1728,10 +1745,14 @@ static int handle_connect_error(URLContext *s, const char *desc)
     const char *user = "", *salt = "", *opaque = NULL,
                *challenge = NULL, *cptr = NULL, *nonce = NULL;
 
+    rt->reply_code = (char*)rt->reply_code_ptr;
+    if(rt->reply_code)rt->reply_code[0]=0;
+
     if (!(cptr = strstr(desc, "authmod=adobe")) &&
         !(cptr = strstr(desc, "authmod=llnw"))) {
         av_log(s, AV_LOG_ERROR,
                "Unknown connect error (unsupported authentication method?)\n");
+        if(rt->reply_code)av_strlcpy(rt->reply_code,"400",MAX_REPLY_LENGTH); 
         return AVERROR_UNKNOWN;
     }
     cptr += strlen("authmod=");
@@ -1741,19 +1762,23 @@ static int handle_connect_error(URLContext *s, const char *desc)
 
     if (!rt->username[0] || !rt->password[0]) {
         av_log(s, AV_LOG_ERROR, "No credentials set\n");
+        if(rt->reply_code)av_strlcpy(rt->reply_code,"401",MAX_REPLY_LENGTH);// Unauthorized
         return AVERROR_UNKNOWN;
     }
 
     if (strstr(desc, "?reason=authfailed")) {
         av_log(s, AV_LOG_ERROR, "Incorrect username/password\n");
+        if(rt->reply_code)av_strlcpy(rt->reply_code,"401",MAX_REPLY_LENGTH);// Unauthorized
         return AVERROR_UNKNOWN;
     } else if (strstr(desc, "?reason=nosuchuser")) {
         av_log(s, AV_LOG_ERROR, "Incorrect username\n");
+        if(rt->reply_code)av_strlcpy(rt->reply_code,"401",MAX_REPLY_LENGTH);// Unauthorized
         return AVERROR_UNKNOWN;
     }
 
     if (rt->auth_tried) {
         av_log(s, AV_LOG_ERROR, "Authentication failed\n");
+        if(rt->reply_code)av_strlcpy(rt->reply_code,"403",MAX_REPLY_LENGTH);// Forbidden
         return AVERROR_UNKNOWN;
     }
 
@@ -1762,11 +1787,13 @@ static int handle_connect_error(URLContext *s, const char *desc)
     if (strstr(desc, "code=403 need auth")) {
         snprintf(rt->auth_params, sizeof(rt->auth_params),
                  "?authmod=%s&user=%s", authmod, rt->username);
+        if(rt->reply_code)av_strlcpy(rt->reply_code,"403",MAX_REPLY_LENGTH);// Forbidden
         return 0;
     }
 
     if (!(cptr = strstr(desc, "?reason=needauth"))) {
         av_log(s, AV_LOG_ERROR, "No auth parameters found\n");
+        if(rt->reply_code)av_strlcpy(rt->reply_code,"403",MAX_REPLY_LENGTH);// Forbidden
         return AVERROR_UNKNOWN;
     }
 
@@ -2510,6 +2537,9 @@ static int rtmp_close(URLContext *h)
     RTMPContext *rt = h->priv_data;
     int ret = 0, i, j;
 
+    rt->reply_text = NULL;
+    rt->reply_code = NULL;
+
     if (!rt->is_input) {
         rt->flv_data = NULL;
         if (rt->out_pkt.size)
@@ -2617,6 +2647,9 @@ static int rtmp_open(URLContext *s, const char *uri, int flags)
     if (rt->listen_timeout > 0)
         rt->listen = 1;
 
+    rt->reply_code = (char*)rt->reply_code_ptr;
+    if(rt->reply_code)rt->reply_code[0]=0;
+
     rt->is_input = !(flags & AVIO_FLAG_WRITE);
 
     av_url_split(proto, sizeof(proto), auth, sizeof(auth),
@@ -2681,6 +2714,7 @@ reconnect:
                                     &s->interrupt_callback, &opts,
                                     s->protocol_whitelist, s->protocol_blacklist, s)) < 0) {
         av_log(s , AV_LOG_ERROR, "Cannot open connection %s\n", buf);
+        if(rt->reply_code)av_strlcpy(rt->reply_code,"400",MAX_REPLY_LENGTH);// Bad Request
         goto fail;
     }
 
@@ -2893,6 +2927,7 @@ reconnect:
 
     s->max_packet_size = rt->stream->max_packet_size;
     s->is_streamed     = 1;
+    if(rt->reply_code)av_strlcpy(rt->reply_code,"200",MAX_REPLY_LENGTH);// OK
     return 0;
 
 fail:
@@ -3128,6 +3163,8 @@ static const AVOption rtmp_options[] = {
     {"rtmp_listen", "Listen for incoming rtmp connections", OFFSET(listen), AV_OPT_TYPE_INT, {.i64 = 0}, INT_MIN, INT_MAX, DEC, "rtmp_listen" },
     {"listen",      "Listen for incoming rtmp connections", OFFSET(listen), AV_OPT_TYPE_INT, {.i64 = 0}, INT_MIN, INT_MAX, DEC, "rtmp_listen" },
     {"timeout", "Maximum timeout (in seconds) to wait for incoming connections. -1 is infinite. Implies -rtmp_listen 1",  OFFSET(listen_timeout), AV_OPT_TYPE_INT, {.i64 = -1}, INT_MIN, INT_MAX, DEC, "rtmp_listen" },
+    { "reply_text_ptr", "Pointer to server reply in text", OFFSET(reply_text_ptr), AV_OPT_TYPE_INT, { .i64 = 0 }, INT64_MIN, INT64_MAX, DEC|ENC },
+    { "reply_code_ptr", "Pointer to server reply in int" , OFFSET(reply_code_ptr), AV_OPT_TYPE_INT, { .i64 = 0 }, INT64_MIN, INT64_MAX, DEC|ENC },
     { NULL },
 };
 

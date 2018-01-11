@@ -23,7 +23,7 @@
 #include "libavutil/avstring.h"
 #include "libavutil/intreadwrite.h"
 #include "libavutil/time.h"
-
+#include "libavcodec/get_bits.h"
 #include "avformat.h"
 #include "network.h"
 #include "srtp.h"
@@ -32,6 +32,11 @@
 #include "rtpdec_formats.h"
 
 #define MIN_FEEDBACK_INTERVAL 200000 /* 200 ms in us */
+
+#ifdef TCP_RR_INTERVAL
+#define MIN_RR_INTERVAL 5000000 /* 5 seconds in us */
+#endif
+
 
 static RTPDynamicProtocolHandler gsm_dynamic_handler = {
     .enc_name   = "GSM",
@@ -113,12 +118,12 @@ void ff_register_rtp_dynamic_payload_handlers(void)
     ff_register_dynamic_payload_handler(&ff_vc2hq_dynamic_handler);
     ff_register_dynamic_payload_handler(&ff_vorbis_dynamic_handler);
     ff_register_dynamic_payload_handler(&ff_vp8_dynamic_handler);
-    ff_register_dynamic_payload_handler(&ff_vp9_dynamic_handler);
+    //ff_register_dynamic_payload_handler(&ff_vp9_dynamic_handler);
     ff_register_dynamic_payload_handler(&gsm_dynamic_handler);
     ff_register_dynamic_payload_handler(&opus_dynamic_handler);
     ff_register_dynamic_payload_handler(&realmedia_mp3_dynamic_handler);
     ff_register_dynamic_payload_handler(&speex_dynamic_handler);
-    ff_register_dynamic_payload_handler(&t140_dynamic_handler);
+    ff_register_dynamic_payload_handler(&ff_zio_dynamic_handler);
 }
 
 RTPDynamicProtocolHandler *ff_rtp_handler_find_by_name(const char *name,
@@ -137,6 +142,9 @@ RTPDynamicProtocolHandler *ff_rtp_handler_find_by_name(const char *name,
 RTPDynamicProtocolHandler *ff_rtp_handler_find_by_id(int id,
                                                      enum AVMediaType codec_type)
 {
+
+av_log(NULL, AV_LOG_DEBUG, "ff_rtp_handler_find_by_id %d %d\n", id, codec_type);
+
     RTPDynamicProtocolHandler *handler;
     for (handler = rtp_first_dynamic_payload_handler;
          handler; handler = handler->next)
@@ -273,7 +281,7 @@ static void rtcp_update_jitter(RTPStatistics *s, uint32_t sent_timestamp,
 }
 
 int ff_rtp_check_and_send_back_rr(RTPDemuxContext *s, URLContext *fd,
-                                  AVIOContext *avio, int count)
+                                  AVIOContext *avio, int count, int prot /*TCP - 0, UDP - 1*/)
 {
     AVIOContext *pb;
     uint8_t *buf;
@@ -291,6 +299,7 @@ int ff_rtp_check_and_send_back_rr(RTPDemuxContext *s, URLContext *fd,
     if ((!fd && !avio) || (count < 1))
         return -1;
 
+	 #ifndef TCP_RR_INTERVAL
     /* TODO: I think this is way too often; RFC 1889 has algorithm for this */
     /* XXX: MPEG pts hardcoded. RTCP send every 0.5 seconds */
     s->octet_count += count;
@@ -300,11 +309,29 @@ int ff_rtp_check_and_send_back_rr(RTPDemuxContext *s, URLContext *fd,
     if (rtcp_bytes < 28)
         return -1;
     s->last_octet_count = s->octet_count;
+    #else
+	 int64_t now;
+    now = av_gettime_relative();
+    if (s->last_rr_time &&
+        (now - s->last_rr_time) < MIN_RR_INTERVAL)
+        return -1;
+    s->last_rr_time = now;
+    #endif 
 
     if (!fd)
         pb = avio;
     else if (avio_open_dyn_buf(&pb) < 0)
         return -1;
+
+	 #ifdef TCP_RR_INTERVAL
+	 if (prot == 0)
+	 {
+		 av_log(s->ic, AV_LOG_DEBUG, "ff_rtp_check_and_send_back_rr %d\n",s->st->index*2+1);
+		 avio_w8(pb, 0x24); 			    	/* Magic */
+		 avio_w8(pb, s->st->index*2+1);  /* Channel */
+		 avio_wb16(pb, 48); 				 	/* length */
+	 }
+	 #endif
 
     // Receiver Report
     avio_w8(pb, (RTP_VERSION << 6) + 1); /* 1 report block */
@@ -663,6 +690,61 @@ static int rtp_parse_packet_internal(RTPDemuxContext *s, AVPacket *pkt,
         len -= ext;
         buf += ext;
     }
+
+    if (s->ic && s->ic->encrypted && s->ic->decrypt_cb.callback)
+    {
+        int start_point = 0;
+        if (payload_type == 96) { /* H264 */
+            switch (buf[0] & 0x1f) {
+                /* Fragmented Units: NALU is bigger than RTP packet*/
+            case 28: {
+                start_point = 2;
+                s->ic->decrypt_cb.callback(s->ic->decrypt_cb.opaque,
+                                           payload_type, 0,
+                                           (uint8_t*) &buf[start_point],
+                                           len - start_point);
+            } break;
+                /* STAP-A: several NALU in one RTP packet*/
+            case 24: {
+                uint8_t found = 0;
+                uint8_t* ptr = 0;
+                size_t pos = 0;
+
+                ptr = &buf[1];
+                while (ptr + sizeof(uint16_t) + 1 < buf + len) {
+                    size_t nalu_len = ptr[0] << 8 | ptr[1];
+                    ptr += sizeof(uint16_t);
+
+                    if (ptr + nalu_len <= buf + len) {
+                        s->ic->decrypt_cb.callback(s->ic->decrypt_cb.opaque,
+                                               payload_type, 0,
+                                               (uint8_t*) ptr + 1,
+                                               nalu_len - 1);
+                    }
+                    ptr += nalu_len;
+                }
+            } break;
+                /* Single NALU mode: one NALU which fits in one RTP packet */
+            default: {
+                start_point = 1;
+                s->ic->decrypt_cb.callback(s->ic->decrypt_cb.opaque,
+                                           payload_type, 0,
+                                           (uint8_t*) &buf[start_point],
+                                           len - start_point);
+            } break;
+            }
+        }
+        else if (payload_type == 97) {
+            start_point = 4;
+            printf("AAC frame of size %d\n", len - start_point);
+            s->ic->decrypt_cb.callback(s->ic->decrypt_cb.opaque,
+                                       payload_type, 0,
+                                       (uint8_t*) &buf[start_point],
+                                       len - start_point);
+        }
+
+    }
+
 
     if (s->handler && s->handler->parse_packet) {
         rv = s->handler->parse_packet(s->ic, s->dynamic_protocol_context,

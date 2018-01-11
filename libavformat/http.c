@@ -55,6 +55,8 @@ typedef enum {
     FINISH
 }HandshakeState;
 
+#define MAX_REPLY_LENGTH 2048
+
 typedef struct HTTPContext {
     const AVClass *class;
     URLContext *hd;
@@ -120,6 +122,11 @@ typedef struct HTTPContext {
     int is_multi_client;
     HandshakeState handshake_step;
     int is_connected_server;
+
+	char *reply_text;
+	char *reply_code_s;
+	int64_t reply_text_ptr;
+	int64_t reply_code_ptr;
 } HTTPContext;
 
 #define OFFSET(x) offsetof(HTTPContext, x)
@@ -160,6 +167,8 @@ static const AVOption options[] = {
     { "listen", "listen on HTTP", OFFSET(listen), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 2, D | E },
     { "resource", "The resource requested by a client", OFFSET(resource), AV_OPT_TYPE_STRING, { .str = NULL }, 0, 0, E },
     { "reply_code", "The http status code to return to a client", OFFSET(reply_code), AV_OPT_TYPE_INT, { .i64 = 200}, INT_MIN, 599, E},
+	{ "reply_text_ptr", "Pointer to server reply in text", OFFSET(reply_text_ptr), AV_OPT_TYPE_INT, { .i64 = 0 }, INT64_MIN, INT64_MAX, D|E },
+	{ "reply_code_ptr", "Pointer to server reply in int" , OFFSET(reply_code_ptr), AV_OPT_TYPE_INT, { .i64 = 0 }, INT64_MIN, INT64_MAX, D|E },
     { NULL }
 };
 
@@ -788,7 +797,13 @@ static int process_line(URLContext *h, char *line, int line_count,
                 p++;
             s->http_code = strtol(p, &end, 10);
 
-            av_log(h, AV_LOG_TRACE, "http_code=%d\n", s->http_code);
+	if(s->reply_code_s)
+	{
+		s->reply_code_s[0]=0;
+		av_strlcatf(s->reply_code_s, MAX_REPLY_LENGTH, "%d",s->http_code);
+	}
+
+        av_log(h, AV_LOG_DEBUG, "http_code=%d\n", s->http_code);
 
             if ((ret = check_http_code(h, s->http_code, end)) < 0)
                 return ret;
@@ -975,13 +990,25 @@ static int http_read_header(URLContext *h, int *new_location)
 
     s->chunksize = UINT64_MAX;
 
+    s->reply_text = (char*)s->reply_text_ptr;
+    if(s->reply_text)s->reply_text[0] = 0;
+    s->reply_code_s = (char*)s->reply_code_ptr;
+    if(s->reply_code_s)s->reply_code_s[0] = 0;
+
     for (;;) {
         if ((err = http_get_line(s, line, sizeof(line))) < 0)
             return err;
 
-        av_log(h, AV_LOG_TRACE, "header='%s'\n", line);
+        av_log(h, AV_LOG_DEBUG, "header='%s'\n", line);
+
+    	if(s->reply_text)
+    	{
+		av_strlcat(s->reply_text, line, MAX_REPLY_LENGTH);
+		av_strlcat(s->reply_text, "\n", MAX_REPLY_LENGTH);
+	}
 
         err = process_line(h, line, s->line_count, new_location);
+
         if (err < 0)
             return err;
         if (err == 0)
@@ -1145,6 +1172,13 @@ static int http_connect(URLContext *h, const char *path, const char *local_path,
          * we've still to send the POST data, but the code calling this
          * function will check http_code after we return. */
         s->http_code = 200;
+
+
+	if(s->reply_code_s)
+	{
+		av_strlcpy(s->reply_code_s, "200", MAX_REPLY_LENGTH);
+	}
+
         err = 0;
         goto done;
     }
@@ -1451,6 +1485,10 @@ static int http_close(URLContext *h)
     inflateEnd(&s->inflate_stream);
     av_freep(&s->inflate_buffer);
 #endif /* CONFIG_ZLIB */
+
+
+    s->reply_text = NULL;
+    s->reply_code_s = NULL;
 
     if (!s->end_chunked_post)
         /* Close the write direction by sending the end of chunked encoding. */
